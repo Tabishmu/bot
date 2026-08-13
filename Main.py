@@ -1,78 +1,97 @@
 import os
-import requests
+import glob
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes
-import requirements.txt
+import yt_dlp
 
-TOKEN = "8822372631:AAEUuv5KLB1TqQ6GW18vnejr1cpD2D-kvRM"
-
-def get_working_proxy():
-    try:
-        res = requests.get("https://api.proxyscrape.com/v2/?request=displayproxies&protocol=http&timeout=3000&country=all&ssl=all&anonymity=all")
-        proxies = res.text.strip().split("\r\n")
-        for proxy in proxies[:10]:
-            proxy_url = f"http://{proxy}"
-            try:
-                r = requests.get("https://httpbin.org/ip", proxies={"http": proxy_url, "https": proxy_url}, timeout=3)
-                if r.status_code == 200:
-                    return proxy_url
-            except:
-                continue
-    except:
-        pass
-    return None
+TOKEN = os.getenv("8822372631:AAEUuv5KLB1TqQ6GW18vnejr1cpD2D-kvRM", "YOUR_TELEGRAM_BOT_TOKEN")
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Please send the media link.")
+    await update.message.reply_text("لینک مورد نظرت رو بفرست!")
 
 async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    context.user_data['url'] = update.message.text
-    keyboard = [[
-        InlineKeyboardButton("🎬 Video", callback_data='video'),
-        InlineKeyboardButton("🎵 Audio", callback_data='audio'),
-        InlineKeyboardButton("🖼 Photo", callback_data='image')
-    ]]
-    await update.message.reply_text("Select format:", reply_markup=InlineKeyboardMarkup(keyboard))
+    url = update.message.text
+    context.user_data['url'] = url
+    
+    keyboard = [
+        [
+            InlineKeyboardButton("🎬 ویدیو", callback_data='video'),
+            InlineKeyboardButton("🎵 موزیک (MP3)", callback_data='audio'),
+            InlineKeyboardButton("🖼 عکس / کاور", callback_data='image')
+        ]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await update.message.reply_text("فرمت درخواستی رو انتخاب کن:", reply_markup=reply_markup)
 
 async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     
     url = context.user_data.get('url')
+    if not url:
+        await query.edit_message_text("لطفاً دوباره لینک را ارسال کنید.")
+        return
+
     choice = query.data
-    await query.edit_message_text("Fetching proxy and downloading...")
+    await query.edit_message_text("در حال دانلود و ارسال...")
 
-    proxy = get_working_proxy()
+    ydl_opts = {
+        'outtmpl': 'downloaded_file.%(ext)s',
+        'quiet': True,
+        'no_warnings': True,
+    }
 
-    ydl_opts = {'outtmpl': 'downloads/%(title)s.%(ext)s'}
-    if proxy:
-        ydl_opts['proxy'] = proxy
-
-    if choice == 'video':
-        ydl_opts['format'] = 'best'
-    elif choice == 'audio':
-        ydl_opts['format'] = 'bestaudio/best'
-        ydl_opts['postprocessors'] = [{'key': 'FFmpegExtractAudio', 'preferredcodec': 'mp3'}]
+    if choice == 'audio':
+        ydl_opts.update({
+            'format': 'bestaudio/best',
+            'postprocessors': [{
+                'key': 'FFmpegExtractAudio',
+                'preferredcodec': 'mp3',
+                'preferredquality': '192',
+            }],
+        })
     elif choice == 'image':
-        ydl_opts['writethumbnail'] = True
-        ydl_opts['skip_download'] = True
+        ydl_opts.update({
+            'skip_download': True,
+            'writethumbnail': True,
+            'outtmpl': 'downloaded_file',
+        })
+    else: # video
+        ydl_opts.update({
+            'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
+        })
 
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=True)
-            file_path = ydl.prepare_filename(info)
+            ydl.download([url])
 
-        if choice == 'image':
-            file_path = os.path.splitext(file_path)[0] + ".jpg"
+        # پیدا کردن فایل دانلود شده
+        files = glob.glob('downloaded_file*')
+        if not files:
+            await query.message.reply_text("فایلی یافت نشد.")
+            return
 
-        await query.message.reply_document(document=open(file_path, 'rb'))
-        os.remove(file_path)
+        file_path = files[0]
+
+        # ارسال فایل
+        with open(file_path, 'rb') as f:
+            if choice == 'audio':
+                await query.message.reply_audio(audio=f)
+            elif choice == 'image':
+                await query.message.reply_photo(photo=f)
+            else:
+                await query.message.reply_video(video=f)
+
+        # پاکسازی
+        for file in files:
+            os.remove(file)
+
     except Exception as e:
-        await query.message.reply_text(f"Download failed: {e}")
+        await query.message.reply_text(f"خطا در دانلود: {str(e)}")
 
-app = ApplicationBuilder().token(TOKEN).build()
-app.add_handler(CommandHandler("start", start))
-app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_url))
-app.add_handler(CallbackQueryHandler(button_click))
-
-app.run_polling()
+if __name__ == '__main__':
+    app = ApplicationBuilder().token(TOKEN).build()
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_url))
+    app.add_handler(CallbackQueryHandler(button_click))
+    app.run_polling()
