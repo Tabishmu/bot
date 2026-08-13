@@ -3,7 +3,6 @@ from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 bot = telebot.TeleBot("8822372631:AAEUuv5KLB1TqQ6GW18vnejr1cpD2D-kvRM")
 
-# اگر پراکسی اختصاصی دارید اینجا بگذارید، در غیر این صورت روی None بماند
 PROXY_URL = None 
 
 user_urls = {}
@@ -46,7 +45,7 @@ def process_download(call):
         'outtmpl': out_template,
         'quiet': True,
         'nocheckcertificate': True,
-        'source_address': '::', # استفاده از IPv6 برای دور زدن مسدودی آی‌پی
+        'source_address': '::',
         'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
     }
 
@@ -54,9 +53,14 @@ def process_download(call):
         opts['proxy'] = PROXY_URL
 
     if is_audio:
-        opts['format'] = 'm4a/bestaudio/best'
+        opts['format'] = 'bestaudio/best'
+        opts['postprocessors'] = [{
+            'key': 'FFmpegExtractAudio',
+            'preferredcodec': 'mp3',
+            'preferredquality': '320',
+        }]
     else:
-        opts['format'] = 'best[ext=mp4]/best'
+        opts['format'] = 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best'
 
     downloaded_file = None
 
