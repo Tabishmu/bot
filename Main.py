@@ -1,5 +1,6 @@
 import os
 import glob
+import re
 import requests
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes
@@ -7,11 +8,20 @@ import yt_dlp
 
 TOKEN = os.getenv("BOT_TOKEN", "8822372631:AAHfWhldF3DG2mgLIiNbEh1g5LfLzM_-qcA")
 
+def extract_url(text):
+    # استخراج اولین لینک از داخل متن
+    urls = re.findall(r'https?://[^\s]+', text)
+    return urls[0] if urls else None
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("لینک مورد نظرت رو بفرست!")
 
 async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    url = update.message.text
+    url = extract_url(update.message.text)
+    if not url:
+        await update.message.reply_text("هیچ لینکی در پیام شما پیدا نشد!")
+        return
+
     context.user_data['url'] = url
     
     keyboard = [
@@ -36,10 +46,10 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
     choice = query.data
     await query.edit_message_text("در حال دانلود و ارسال...")
 
-    # اگر لینک یوتیوب بود از API واسط استفاده کن
+    # برای یوتیوب
     if "youtube.com" in url or "youtu.be" in url:
         try:
-            api_url = f"https://api.cobalt.tools/api/json"
+            api_url = "https://api.cobalt.tools/api/json"
             headers = {"Accept": "application/json", "Content-Type": "application/json"}
             payload = {"url": url}
             
@@ -47,7 +57,6 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 payload["downloadMode"] = "audio"
                 payload["audioFormat"] = "mp3"
             elif choice == 'image':
-                # گرفتن عکس کاور یوتیوب
                 yt_id = url.split("v=")[-1].split("&")[0].split("/")[-1]
                 img_url = f"https://img.youtube.com/vi/{yt_id}/maxresdefault.jpg"
                 await query.message.reply_photo(photo=img_url)
@@ -63,9 +72,9 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     await query.message.reply_video(video=download_link)
                 return
         except Exception:
-            pass # اگر API ناموفق بود برود سراغ yt-dlp
+            pass
 
-    # برای سایر سایت‌ها (اینستاگرام، تیک‌تاک و...) از yt-dlp استفاده کن
+    # برای بقیه سایت‌ها
     ydl_opts = {
         'outtmpl': 'downloaded_file.%(ext)s',
         'quiet': True,
