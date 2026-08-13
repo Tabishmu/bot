@@ -5,7 +5,7 @@ bot = telebot.TeleBot("8822372631:AAEUuv5KLB1TqQ6GW18vnejr1cpD2D-kvRM")
 
 user_urls = {}
 
-@bot.message_handler(commands=["start"])
+@bot.message_handler(commands=["شروع"])
 def send_welcome(m):
     bot.reply_to(m, "سلام خوش آمدی روان کو لینک ته زیاد گپ نزن اعصاب نیست 😒")
 
@@ -23,7 +23,7 @@ def handle_link(m):
         InlineKeyboardButton("🎬 ویدیو (MP4)", callback_data="dl_video"),
         InlineKeyboardButton("🎵 صوتی (Audio)", callback_data="dl_audio")
     )
-    bot.reply_to(m, "فرمت مورد نظر را انتخاب کنید:", reply_markup=markup)
+    bot.reply_to(m, "کدامش :", reply_markup=markup)
 
 @bot.callback_query_handler(func=lambda call: call.data in ["dl_video", "dl_audio"])
 def process_download(call):
@@ -31,10 +31,10 @@ def process_download(call):
     url = user_urls.get(chat_id)
     
     if not url:
-        bot.send_message(chat_id, "لینک یافت نشد، دوباره ارسال کنید.")
+        bot.send_message(chat_id, "گنایت نیست لینک توهم خودت واری تاریخش تیر شده .")
         return
 
-    msg = bot.send_message(chat_id, "در حال از چاه کشیدن...")
+    msg = bot.send_message(chat_id, "😒")
     
     is_audio = call.data == "dl_audio"
     out_template = f"{chat_id}.%(ext)s"
