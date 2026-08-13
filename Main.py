@@ -30,7 +30,7 @@ async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [[
         InlineKeyboardButton("🎬 Video", callback_data='video'),
         InlineKeyboardButton("🎵 Audio", callback_data='audio'),
-        InlineKeyboardButton("🖼 Photo", callback_data='image')
+        InlineKeyboardButton("🖼. Photo", callback_data='image')
     ]]
     await update.message.reply_text("Select format:", reply_markup=InlineKeyboardMarkup(keyboard))
 
