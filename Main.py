@@ -1,124 +1,81 @@
-import os
-import glob
-import re
-import requests
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes
-import yt_dlp
+import os, telebot, yt_dlp
+from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 
-TOKEN = os.getenv("BOT_TOKEN", "8822372631:AAHfWhldF3DG2mgLIiNbEh1g5LfLzM_-qcA")
+BOT_TOKEN = "8822372631:AAHfWhldF3DG2mgLIiNbEh1g5LfLzM_-qcA"
+bot = telebot.TeleBot(BOT_TOKEN)
 
-def extract_url(text):
-    # استخراج اولین لینک از داخل متن
-    urls = re.findall(r'https?://[^\s]+', text)
-    return urls[0] if urls else None
+user_urls = {}
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("لینک مورد نظرت رو بفرست!")
+@bot.message_handler(commands=['start'])
+def start_cmd(m):
+    bot.reply_to(m, "سلام! خوش آمدید. 🌹\nلینک پست یا ویدیو را بفرستید تا برایتان دانلود کنم.")
 
-async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    url = extract_url(update.message.text)
-    if not url:
-        await update.message.reply_text("هیچ لینکی در پیام شما پیدا نشد!")
-        return
+@bot.message_handler(content_types=['new_chat_members'])
+def welcome_members(m):
+    for member in m.new_chat_members:
+        if not member.is_bot:
+            bot.reply_to(m, f"سلام {member.first_name} عزیز! به گروه خوش آمدید. 🌹")
 
-    context.user_data['url'] = url
+@bot.message_handler(func=lambda m: m.text and m.text.startswith("http"))
+def get_link(m):
+    clean_url = m.text.split('?')[0].split('&')[0]
+    user_urls[m.chat.id] = clean_url
+
+    markup = InlineKeyboardMarkup()
+    markup.add(
+        InlineKeyboardButton("🎬 دانلود ویدیو", callback_data="dl_video"),
+        InlineKeyboardButton("🎵 دانلود موزیک / صوتی", callback_data="dl_audio")
+    )
+    bot.reply_to(m, "📥 فرمت مورد نظر را انتخاب کنید:", reply_markup=markup)
+
+@bot.callback_query_handler(func=lambda call: call.data in ["dl_video", "dl_audio"])
+def process_download(call):
+    chat_id = call.message.chat.id
+    url = user_urls.get(chat_id)
     
-    keyboard = [
-        [
-            InlineKeyboardButton("🎬 ویدیو", callback_data='video'),
-            InlineKeyboardButton("🎵 موزیک (MP3)", callback_data='audio'),
-            InlineKeyboardButton("🖼 عکس / کاور", callback_data='image')
-        ]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    await update.message.reply_text("فرمت درخواستی رو انتخاب کن:", reply_markup=reply_markup)
-
-async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    
-    url = context.user_data.get('url')
     if not url:
-        await query.edit_message_text("لطفاً دوباره لینک را ارسال کنید.")
-        return
+        return bot.send_message(chat_id, "❌ لینک پیدا نشد، لطفا دوباره ارسال کنید.")
 
-    choice = query.data
-    await query.edit_message_text("در حال دانلود و ارسال...")
+    msg = bot.send_message(chat_id, "⏳ در حال دانلود و پردازش...")
+    is_audio = call.data == "dl_audio"
+    out_tmpl = f"{chat_id}.%(ext)s"
 
-    # برای یوتیوب
-    if "youtube.com" in url or "youtu.be" in url:
-        try:
-            api_url = "https://api.cobalt.tools/api/json"
-            headers = {"Accept": "application/json", "Content-Type": "application/json"}
-            payload = {"url": url}
-            
-            if choice == 'audio':
-                payload["downloadMode"] = "audio"
-                payload["audioFormat"] = "mp3"
-            elif choice == 'image':
-                yt_id = url.split("v=")[-1].split("&")[0].split("/")[-1]
-                img_url = f"https://img.youtube.com/vi/{yt_id}/maxresdefault.jpg"
-                await query.message.reply_photo(photo=img_url)
-                return
-
-            res = requests.post(api_url, json=payload, headers=headers).json()
-            download_link = res.get("url")
-
-            if download_link:
-                if choice == 'audio':
-                    await query.message.reply_audio(audio=download_link)
-                else:
-                    await query.message.reply_video(video=download_link)
-                return
-        except Exception:
-            pass
-
-    # برای بقیه سایت‌ها
-    ydl_opts = {
-        'outtmpl': 'downloaded_file.%(ext)s',
+    opts = {
+        'outtmpl': out_tmpl,
         'quiet': True,
         'no_warnings': True,
-        'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'nocheckcertificate': True,
+        'cookiefile': 'cookies.txt' if os.path.exists('cookies.txt') else None,
+        'extractor_args': {
+            'youtube': {'player_client': ['ios', 'android']}
+        }
     }
 
-    if choice == 'audio':
-        ydl_opts.update({
-            'format': 'bestaudio/best',
-            'postprocessors': [{'key': 'FFmpegExtractAudio', 'preferredcodec': 'mp3', 'preferredquality': '192'}],
-        })
-    elif choice == 'image':
-        ydl_opts.update({'skip_download': True, 'writethumbnail': True, 'outtmpl': 'downloaded_file'})
+    if is_audio:
+        opts['format'] = 'm4a/bestaudio/best'
     else:
-        ydl_opts.update({'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best'})
+        opts['format'] = 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best'
+
+    file_path = None
 
     try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            ydl.download([url])
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            info = ydl.extract_info(url, download=True)
+            file_path = ydl.prepare_filename(info)
 
-        files = glob.glob('downloaded_file*')
-        if not files:
-            await query.message.reply_text("فایلی یافت نشد.")
-            return
-
-        file_path = files[0]
         with open(file_path, 'rb') as f:
-            if choice == 'audio':
-                await query.message.reply_audio(audio=f)
-            elif choice == 'image':
-                await query.message.reply_photo(photo=f)
+            if is_audio:
+                bot.send_audio(chat_id, f)
             else:
-                await query.message.reply_video(video=f)
+                bot.send_video(chat_id, f)
 
-        for file in files:
-            os.remove(file)
+        bot.delete_message(chat_id, msg.message_id)
 
     except Exception as e:
-        await query.message.reply_text(f"خطا در دانلود: {str(e)}")
+        bot.edit_message_text(f"❌ خطا در دانلود! ممکن است لینک خصوصی یا مسدود باشد.\nجزئیات: {str(e)[:50]}", chat_id, msg.message_id)
 
-if __name__ == '__main__':
-    app = ApplicationBuilder().token(TOKEN).build()
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_url))
-    app.add_handler(CallbackQueryHandler(button_click))
-    app.run_polling()
+    finally:
+        if file_path and os.path.exists(file_path):
+            os.remove(file_path)
+
+bot.infinity_polling()
