@@ -1,15 +1,15 @@
 import os, telebot, yt_dlp
-from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
+from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, ChatPermissions
 
 BOT_TOKEN = "8822372631:AAEUuv5KLB1TqQ6GW18vnejr1cpD2D-kvRM"
-bot = telebot.TeleBot(BOT_TOKEN)
+bot = telebot.TeleBot(8822372631:AAEUuv5KLB1TqQ6GW18vnejr1cpD2D-kvRM)
 
-# ذخیره اطلاعات موقت
+# دیتابیس در حافظه
 user_urls = {}
-warns = {}  # اخطارها: {chat_id_user_id: count}
-locks = {}  # قفل‌ها: {chat_id: {'link': True/False}}
+warns = {}          # {chat_id_user_id: count}
+locks = {}          # {chat_id: {'link': True, 'photo': False, 'sticker': False, 'tglink': True}}
+captcha_users = {}  # {chat_id_user_id: answer}
 
-# بررسی ادمین بودن کاربر
 def is_admin(chat_id, user_id):
     try:
         member = bot.get_chat_member(chat_id, user_id)
@@ -17,172 +17,164 @@ def is_admin(chat_id, user_id):
     except Exception:
         return False
 
-# --- بخش ۱: مدیریت گروه (مشابه Miss Rose به فارسی) ---
+# --- ۱. سیستم احراز هویت (کپچا) و خوش‌آمدگویی ---
 
-# خوش‌آمدگویی
 @bot.message_handler(content_types=['new_chat_members'])
-def welcome(m):
+def welcome_and_captcha(m):
     for member in m.new_chat_members:
-        bot.reply_to(m, f"سلام {member.first_name} عزیز! به گروه خوش آمدی. 🌹")
+        if member.is_bot: continue
+        
+        # محدود کردن کاربر تا زمان حل کپچا
+        bot.restrict_chat_member(m.chat.id, member.id, permissions=ChatPermissions(can_send_messages=False))
+        
+        # ایجاد دکمه شیشه‌ای تایید
+        markup = InlineKeyboardMarkup()
+        markup.add(InlineKeyboardButton("✅ من ربات نیستم (تایید)", callback_data=f"verify_{member.id}"))
+        
+        bot.send_message(
+            m.chat.id, 
+            f"سلام {member.first_name} عزیز! 🌹\nبه گروه خوش آمدید. برای ارسال پیام لطفا روی دکمه زیر بزنید:",
+            reply_markup=markup
+        )
 
-# سنجاق کردن پیام (/pin)
-@bot.message_handler(commands=['pin', 'سنجاق'])
-def pin_msg(m):
-    if not is_admin(m.chat.id, m.from_user.id):
-        return bot.reply_to(m, "❌ شما ادمین نیستید!")
-    if m.reply_to_message:
-        bot.pin_chat_message(m.chat.id, m.reply_to_message.message_id)
-        bot.reply_to(m, "📌 پیام با موفقیت سنجاق شد.")
+@bot.callback_query_handler(func=lambda call: call.data.startswith("verify_"))
+def verify_captcha(call):
+    target_id = int(call.data.split("_")[1])
+    if call.from_user.id != target_id:
+        return bot.answer_callback_query(call.id, "❌ این دکمه مخصوص شما نیست!", show_alert=True)
+    
+    # آزادسازی دسترسی
+    bot.restrict_chat_member(
+        call.message.chat.id, 
+        target_id, 
+        permissions=ChatPermissions(
+            can_send_messages=True, 
+            can_send_media_messages=True, 
+            can_send_other_messages=True,
+            can_add_web_page_previews=True
+        )
+    )
+    bot.answer_callback_query(call.id, "✅ حساب شما تایید شد.")
+    bot.delete_message(call.message.chat.id, call.message.message_id)
 
-# حذف پیام (/del)
-@bot.message_handler(commands=['del', 'حذف'])
-def delete_msg(m):
-    if not is_admin(m.chat.id, m.from_user.id):
-        return bot.reply_to(m, "❌ شما ادمین نیستید!")
-    if m.reply_to_message:
-        bot.delete_message(m.chat.id, m.reply_to_message.message_id)
-        bot.delete_message(m.chat.id, m.message_id)
+# --- ۲. دستورات مدیریتی دیجی آنتی ---
 
-# بن کردن کاربر (/ban)
+# قفل‌ها: /lock link | /lock photo | /lock sticker
+@bot.message_handler(commands=['lock', 'قفل'])
+def lock_features(m):
+    if not is_admin(m.chat.id, m.from_user.id): return
+    args = m.text.split()
+    if len(args) > 1:
+        feature = args[1].lower()
+        locks.setdefault(m.chat.id, {})[feature] = True
+        bot.reply_to(m, f"🔒 قابلیت **{feature}** قفل شد.")
+
+# بازکردن قفل: /unlock link | /unlock photo
+@bot.message_handler(commands=['unlock', 'بازکردن'])
+def unlock_features(m):
+    if not is_admin(m.chat.id, m.from_user.id): return
+    args = m.text.split()
+    if len(args) > 1:
+        feature = args[1].lower()
+        locks.setdefault(m.chat.id, {})[feature] = False
+        bot.reply_to(m, f"🔓 قابلیت **{feature}** آزاد شد.")
+
+# سکوت کاربر (/mute)
+@bot.message_handler(commands=['mute', 'سکوت'])
+def mute_user(m):
+    if not is_admin(m.chat.id, m.from_user.id) or not m.reply_to_message: return
+    target = m.reply_to_message.from_user
+    bot.restrict_chat_member(m.chat.id, target.id, permissions=ChatPermissions(can_send_messages=False))
+    bot.reply_to(m, f"🔇 کاربر {target.first_name} سکوت شد.")
+
+# لغو سکوت (/unmute)
+@bot.message_handler(commands=['unmute', 'باطل_سکوت'])
+def unmute_user(m):
+    if not is_admin(m.chat.id, m.from_user.id) or not m.reply_to_message: return
+    target = m.reply_to_message.from_user
+    bot.restrict_chat_member(m.chat.id, target.id, permissions=ChatPermissions(can_send_messages=True, can_send_media_messages=True))
+    bot.reply_to(m, f"🔊 سکوت کاربر {target.first_name} برداشته شد.")
+
+# بن (/ban)
 @bot.message_handler(commands=['ban', 'مسدود'])
 def ban_user(m):
-    if not is_admin(m.chat.id, m.from_user.id):
-        return bot.reply_to(m, "❌ شما ادمین نیستید!")
-    if m.reply_to_message:
-        target = m.reply_to_message.from_user
-        bot.ban_chat_member(m.chat.id, target.id)
-        bot.reply_to(m, f"🚫 کاربر {target.first_name} از گروه اخراج و مسدود شد.")
+    if not is_admin(m.chat.id, m.from_user.id) or not m.reply_to_message: return
+    target = m.reply_to_message.from_user
+    bot.ban_chat_member(m.chat.id, target.id)
+    bot.reply_to(m, f"🚫 کاربر {target.first_name} اخراج شد.")
 
-# آنبن کردن (/unban)
-@bot.message_handler(commands=['unban', 'آزاد'])
-def unban_user(m):
-    if not is_admin(m.chat.id, m.from_user.id):
-        return bot.reply_to(m, "❌ شما ادمین نیستید!")
-    if m.reply_to_message:
-        target = m.reply_to_message.from_user
-        bot.unban_chat_member(m.chat.id, target.id)
-        bot.reply_to(m, f"✅ محدودیت کاربر {target.first_name} برداشته شد.")
-
-# دادن اخطار (/warn)
+# اخطار (/warn)
 @bot.message_handler(commands=['warn', 'اخطار'])
 def warn_user(m):
-    if not is_admin(m.chat.id, m.from_user.id):
-        return bot.reply_to(m, "❌ شما ادمین نیستید!")
-    if m.reply_to_message:
-        target = m.reply_to_message.from_user
-        key = f"{m.chat.id}_{target.id}"
-        warns[key] = warns.get(key, 0) + 1
-        
-        if warns[key] >= 3:
-            bot.ban_chat_member(m.chat.id, target.id)
-            bot.reply_to(m, f"🚫 کاربر {target.first_name} به دلیل دریافت ۳ اخطار اخراج شد!")
-            warns[key] = 0
-        else:
-            bot.reply_to(m, f"⚠️ به کاربر {target.first_name} اخطار داده شد. (تعداد اخطارها: {warns[key]}/3)")
-
-# پاک کردن اخطارها (/unwarn)
-@bot.message_handler(commands=['unwarn', 'حذف_اخطار'])
-def unwarn_user(m):
-    if not is_admin(m.chat.id, m.from_user.id):
-        return bot.reply_to(m, "❌ شما ادمین نیستید!")
-    if m.reply_to_message:
-        target = m.reply_to_message.from_user
-        key = f"{m.chat.id}_{target.id}"
+    if not is_admin(m.chat.id, m.from_user.id) or not m.reply_to_message: return
+    target = m.reply_to_message.from_user
+    key = f"{m.chat.id}_{target.id}"
+    warns[key] = warns.get(key, 0) + 1
+    if warns[key] >= 3:
+        bot.ban_chat_member(m.chat.id, target.id)
+        bot.reply_to(m, f"🚫 کاربر {target.first_name} به علت ۳ اخطار اخراج شد.")
         warns[key] = 0
-        bot.reply_to(m, f"🧹 تمام اخطارهای {target.first_name} پاک شد.")
+    else:
+        bot.reply_to(m, f"⚠️ اخطار به {target.first_name} ({warns[key]}/3)")
 
-# قفل لینک (/lock link)
-@bot.message_handler(commands=['lock', 'قفل'])
-def lock_setting(m):
-    if not is_admin(m.chat.id, m.from_user.id):
-        return bot.reply_to(m, "❌ شما ادمین نیستید!")
-    args = m.text.split()
-    if len(args) > 1 and args[1] in ['link', 'لینک']:
-        locks[m.chat.id] = locks.get(m.chat.id, {})
-        locks[m.chat.id]['link'] = True
-        bot.reply_to(m, "🔒 ارسال لینک در گروه قفل شد.")
+# --- ۳. فیلتر هوشمند پیام‌ها و دانلودر ---
 
-# باز کردن قفل لینک (/unlock link)
-@bot.message_handler(commands=['unlock', 'بازکردن'])
-def unlock_setting(m):
-    if not is_admin(m.chat.id, m.from_user.id):
-        return bot.reply_to(m, "❌ شما ادمین نیستید!")
-    args = m.text.split()
-    if len(args) > 1 and args[1] in ['link', 'لینک']:
-        locks[m.chat.id] = locks.get(m.chat.id, {})
-        locks[m.chat.id]['link'] = False
-        bot.reply_to(m, "🔓 ارسال لینک آزاد شد.")
-
-# --- بخش ۲: دانلودر موزیک و ویدیو ---
-
-@bot.message_handler(commands=["start", "راهنما"])
-def send_welcome(m):
-    bot.reply_to(m, "سلام! من ربات مدیریت گروه و دانلودر هستم.\nلینک یوتیوب بفرستید تا دانلود کنم یا من را ادمین گروه کنید.")
-
-@bot.message_handler(func=lambda m: m.text and m.text.startswith("http"))
-def handle_link_and_locks(m):
-    # چک کردن قفل لینک برای کاربران معمولی
+@bot.message_handler(func=lambda m: True, content_types=['text', 'photo', 'sticker'])
+def monitor_and_download(m):
     chat_locks = locks.get(m.chat.id, {})
-    if chat_locks.get('link', False) and not is_admin(m.chat.id, m.from_user.id):
-        bot.delete_message(m.chat.id, m.message_id)
-        return
+    admin = is_admin(m.chat.id, m.from_user.id)
 
-    # پردازش دانلود لینک
-    clean_url = m.text.split('?')[0].split('&')[0]
-    user_urls[m.chat.id] = clean_url
+    # بررسی قفل‌ها (برای غیر ادمین)
+    if not admin:
+        if chat_locks.get('photo') and m.content_type == 'photo':
+            return bot.delete_message(m.chat.id, m.message_id)
+        if chat_locks.get('sticker') and m.content_type == 'sticker':
+            return bot.delete_message(m.chat.id, m.message_id)
+        if chat_locks.get('link') and m.text and ("http" in m.text or "t.me" in m.text or "@" in m.text):
+            return bot.delete_message(m.chat.id, m.message_id)
 
-    markup = InlineKeyboardMarkup()
-    markup.add(
-        InlineKeyboardButton("🎬 ویدیو (MP4)", callback_data="dl_video"),
-        InlineKeyboardButton("🎵 موزیک (MP3/Audio)", callback_data="dl_audio")
-    )
-    bot.reply_to(m, "فرمت دانلود را انتخاب کنید:", reply_markup=markup)
+    # دانلودر لینک‌های یوتیوب
+    if m.text and m.text.startswith("http"):
+        clean_url = m.text.split('?')[0].split('&')[0]
+        user_urls[m.chat.id] = clean_url
+        markup = InlineKeyboardMarkup()
+        markup.add(
+            InlineKeyboardButton("🎬 دانلود ویدیو", callback_data="dl_video"),
+            InlineKeyboardButton("🎵 دانلود موزیک", callback_data="dl_audio")
+        )
+        bot.reply_to(m, "📥 فرمت دانلود را انتخاب کنید:", reply_markup=markup)
 
 @bot.callback_query_handler(func=lambda call: call.data in ["dl_video", "dl_audio"])
 def process_download(call):
     chat_id = call.message.chat.id
     url = user_urls.get(chat_id)
-    
-    if not url:
-        bot.send_message(chat_id, "لینک پیدا نشد، دوباره ارسال کنید.")
-        return
+    if not url: return
 
-    msg = bot.send_message(chat_id, "⏳ در حال دانلود...")
-    
+    msg = bot.send_message(chat_id, "⏳ در حال پردازش...")
     is_audio = call.data == "dl_audio"
-    out_template = f"{chat_id}.%(ext)s"
+    out_tmpl = f"{chat_id}.%(ext)s"
 
     opts = {
-        'outtmpl': out_template,
+        'outtmpl': out_tmpl,
         'quiet': True,
-        'nocheckcertificate': True,
-        'noplaylist': True,
+        'cookiefile': 'cookies.txt' if os.path.exists('cookies.txt') else None,
         'extractor_args': {'youtube': {'player_client': ['ios', 'android']}}
     }
+    opts['format'] = 'm4a/bestaudio/best' if is_audio else 'best[ext=mp4]/best'
 
-    if is_audio:
-        opts['format'] = 'm4a/bestaudio/best'
-    else:
-        opts['format'] = 'best[ext=mp4]/best'
-
-    downloaded_file = None
-
+    file_path = None
     try:
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(url, download=True)
-            downloaded_file = ydl.prepare_filename(info)
+            file_path = ydl.prepare_filename(info)
 
-        with open(downloaded_file, 'rb') as file:
-            if is_audio:
-                bot.send_audio(chat_id, file)
-            else:
-                bot.send_video(chat_id, file)
-
+        with open(file_path, 'rb') as f:
+            if is_audio: bot.send_audio(chat_id, f)
+            else: bot.send_video(chat_id, f)
         bot.delete_message(chat_id, msg.message_id)
     except Exception as e:
-        bot.edit_message_text(f"خطا در دانلود!\nجزئیات: {str(e)[:50]}", chat_id, msg.message_id)
+        bot.edit_message_text(f"خطا: {str(e)[:40]}", chat_id, msg.message_id)
     finally:
-        if downloaded_file and os.path.exists(downloaded_file):
-            os.remove(downloaded_file)
+        if file_path and os.path.exists(file_path): os.remove(file_path)
 
 bot.infinity_polling()
