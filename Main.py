@@ -1,22 +1,38 @@
 import os
+import requests
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes
 import yt_dlp
 
 TOKEN = "8822372631:AAEUuv5KLB1TqQ6GW18vnejr1cpD2D-kvRM"
-TOR_PROXY = "socks5://127.0.0.1:9050"  # آدرس پراکسی Tor
+
+def get_working_proxy():
+    try:
+        res = requests.get("https://api.proxyscrape.com/v2/?request=displayproxies&protocol=http&timeout=3000&country=all&ssl=all&anonymity=all")
+        proxies = res.text.strip().split("\r\n")
+        for proxy in proxies[:10]:
+            proxy_url = f"http://{proxy}"
+            try:
+                r = requests.get("https://httpbin.org/ip", proxies={"http": proxy_url, "https": proxy_url}, timeout=3)
+                if r.status_code == 200:
+                    return proxy_url
+            except:
+                continue
+    except:
+        pass
+    return None
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("لینک را بفرستید.")
+    await update.message.reply_text("Please send the media link.")
 
 async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['url'] = update.message.text
-    keyboard = [
-        [InlineKeyboardButton("🎬 ویدیو", callback_data='video')],
-        [InlineKeyboardButton("🎵 موزیک", callback_data='audio')],
-        [InlineKeyboardButton("🖼 عکس", callback_data='image')]
-    ]
-    await update.message.reply_text("فرمت را انتخاب کنید:", reply_markup=InlineKeyboardMarkup(keyboard))
+    keyboard = [[
+        InlineKeyboardButton("🎬 Video", callback_data='video'),
+        InlineKeyboardButton("🎵 Audio", callback_data='audio'),
+        InlineKeyboardButton("🖼 Photo", callback_data='image')
+    ]]
+    await update.message.reply_text("Select format:", reply_markup=InlineKeyboardMarkup(keyboard))
 
 async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -24,17 +40,16 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     url = context.user_data.get('url')
     choice = query.data
-    await query.edit_message_text("در حال دانلود با آی‌پی جدید...")
+    await query.edit_message_text("Fetching proxy and downloading...")
 
-    # تنظیمات yt-dlp همراه با پراکسی برای تغییر آی‌پی
-    ydl_opts = {
-        'outtmpl': 'downloads/%(title)s.%(ext)s',
-        'proxy': TOR_PROXY,  # تغییر آی‌پی از طریق Tor
-        'source_address': '0.0.0.0',
-    }
+    proxy = get_working_proxy()
+
+    ydl_opts = {'outtmpl': 'downloads/%(title)s.%(ext)s'}
+    if proxy:
+        ydl_opts['proxy'] = proxy
 
     if choice == 'video':
-        ydl_opts['format'] = 'bestvideo+bestaudio/best'
+        ydl_opts['format'] = 'best'
     elif choice == 'audio':
         ydl_opts['format'] = 'bestaudio/best'
         ydl_opts['postprocessors'] = [{'key': 'FFmpegExtractAudio', 'preferredcodec': 'mp3'}]
@@ -52,8 +67,8 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         await query.message.reply_document(document=open(file_path, 'rb'))
         os.remove(file_path)
-    except Exception:
-        await query.message.reply_text("خطا در دانلود!")
+    except Exception as e:
+        await query.message.reply_text(f"Download failed: {e}")
 
 app = ApplicationBuilder().token(TOKEN).build()
 app.add_handler(CommandHandler("start", start))
