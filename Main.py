@@ -15,13 +15,13 @@ def handle_link(m):
         bot.reply_to(m, "حیف نان لینک قلاچ کدن هم یاد نداری")
         return
     
-    clean_url = m.text.split('?')[0]
+    clean_url = m.text.split('?')[0].split('&')[0]
     user_urls[m.chat.id] = clean_url
 
     markup = InlineKeyboardMarkup()
     markup.add(
         InlineKeyboardButton("🎬 ویدیو (MP4)", callback_data="dl_video"),
-        InlineKeyboardButton("🎵 صوتی (MP3)", callback_data="dl_audio")
+        InlineKeyboardButton("🎵 صوتی (Audio)", callback_data="dl_audio")
     )
     bot.reply_to(m, "فرمت مورد نظر را انتخاب کنید:", reply_markup=markup)
 
@@ -34,34 +34,31 @@ def process_download(call):
         bot.send_message(chat_id, "لینک یافت نشد، دوباره ارسال کنید.")
         return
 
-    msg = bot.send_message(chat_id, ". دردته به قراری بخور خدا زده 😒")
+    msg = bot.send_message(chat_id, "در حال از چاه کشیدن...")
     
     is_audio = call.data == "dl_audio"
-    ext = "mp3" if is_audio else "mp4"
-    out = f"{chat_id}.{ext}"
+    out_template = f"{chat_id}.%(ext)s"
 
     opts = {
-        'outtmpl': out,
+        'outtmpl': out_template,
         'quiet': True,
         'nocheckcertificate': True,
-        'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
+        'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
     }
 
     if is_audio:
-        opts['format'] = 'bestaudio/best'
-        opts['postprocessors'] = [{
-            'key': 'FFmpegExtractAudio',
-            'preferredcodec': 'mp3',
-            'preferredquality': '192',
-        }]
+        opts['format'] = 'm4a/bestaudio/best'
     else:
-        opts['format'] = 'b[ext=mp4]/best'
+        opts['format'] = 'best[ext=mp4]/best'
+
+    downloaded_file = None
 
     try:
         with yt_dlp.YoutubeDL(opts) as ydl:
-            ydl.download([url])
+            info = ydl.extract_info(url, download=True)
+            downloaded_file = ydl.prepare_filename(info)
 
-        with open(out, 'rb') as file:
+        with open(downloaded_file, 'rb') as file:
             if is_audio:
                 bot.send_audio(chat_id, file)
             else:
@@ -69,9 +66,9 @@ def process_download(call):
 
         bot.delete_message(chat_id, msg.message_id)
     except Exception as e:
-        bot.edit_message_text("خطا در دانلود! لینک نامعتبر است یا ویدیو خصوصی می‌باشد.", chat_id, msg.message_id)
+        bot.edit_message_text(f"خطا در دانلود! ممکن است IP سرور محدود شده یا لینک اشتباه باشد.\nجزییات: {str(e)[:50]}", chat_id, msg.message_id)
     finally:
-        if os.path.exists(out):
-            os.remove(out)
+        if downloaded_file and os.path.exists(downloaded_file):
+            os.remove(downloaded_file)
 
 bot.infinity_polling()
