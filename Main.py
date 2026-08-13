@@ -3,7 +3,7 @@ from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 bot = telebot.TeleBot("8822372631:AAEUuv5KLB1TqQ6GW18vnejr1cpD2D-kvRM")
 
-PROXY_URL = None 
+PROXY_URL = "http://YOUR_US_PROXY_IP:PORT"
 
 user_urls = {}
 
@@ -45,12 +45,11 @@ def process_download(call):
         'outtmpl': out_template,
         'quiet': True,
         'nocheckcertificate': True,
-        'source_address': '::',
+        'noplaylist': True,
+        'writethumbnail': False,
+        'proxy': PROXY_URL,
         'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
     }
-
-    if PROXY_URL:
-        opts['proxy'] = PROXY_URL
 
     if is_audio:
         opts['format'] = 'bestaudio/best'
