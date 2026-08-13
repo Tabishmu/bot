@@ -1,5 +1,2 @@
 pyTelegramBotAPI
 yt-dlp
-instagram.com
-youtube.com
-tiktok.com
