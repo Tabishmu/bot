@@ -54,7 +54,7 @@ def verify_captcha(call):
             can_add_web_page_previews=True
         )
     )
-    bot.answer_callback_query(call.id, "✅ حساب شما تایید شد.")
+    bot.answer_callback_query(call.id, "✅ حساب شما . تایید شد.")
     bot.delete_message(call.message.chat.id, call.message.message_id)
 
 # --- ۲. دستورات مدیریتی دیجی آنتی ---
