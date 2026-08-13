@@ -4,7 +4,7 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes
 import yt_dlp
 
-TOKEN = os.getenv("8822372631:AAEUuv5KLB1TqQ6GW18vnejr1cpD2D-kvRM", "YOUR_TELEGRAM_BOT_TOKEN")
+TOKEN = os.getenv("BOT_TOKEN", "8822372631:AAEUuv5KLB1TqQ6GW18vnejr1cpD2D-kvRM")
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("لینک مورد نظرت رو بفرست!")
