@@ -3,9 +3,12 @@ from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 bot = telebot.TeleBot("8822372631:AAEUuv5KLB1TqQ6GW18vnejr1cpD2D-kvRM")
 
+# اگر پراکسی اختصاصی دارید اینجا بگذارید، در غیر این صورت روی None بماند
+PROXY_URL = None 
+
 user_urls = {}
 
-@bot.message_handler(commands=["شروع"])
+@bot.message_handler(commands=["start"])
 def send_welcome(m):
     bot.reply_to(m, "سلام خوش آمدی روان کو لینک ته زیاد گپ نزن اعصاب نیست 😒")
 
@@ -23,7 +26,7 @@ def handle_link(m):
         InlineKeyboardButton("🎬 ویدیو (MP4)", callback_data="dl_video"),
         InlineKeyboardButton("🎵 صوتی (Audio)", callback_data="dl_audio")
     )
-    bot.reply_to(m, "کدامش :", reply_markup=markup)
+    bot.reply_to(m, "فرمت مورد نظر را انتخاب کنید:", reply_markup=markup)
 
 @bot.callback_query_handler(func=lambda call: call.data in ["dl_video", "dl_audio"])
 def process_download(call):
@@ -31,10 +34,10 @@ def process_download(call):
     url = user_urls.get(chat_id)
     
     if not url:
-        bot.send_message(chat_id, "گنایت نیست لینک توهم خودت واری تاریخش تیر شده .")
+        bot.send_message(chat_id, "لینک یافت نشد، دوباره ارسال کنید.")
         return
 
-    msg = bot.send_message(chat_id, "😒")
+    msg = bot.send_message(chat_id, "در حال از چاه کشیدن...")
     
     is_audio = call.data == "dl_audio"
     out_template = f"{chat_id}.%(ext)s"
@@ -43,8 +46,12 @@ def process_download(call):
         'outtmpl': out_template,
         'quiet': True,
         'nocheckcertificate': True,
+        'source_address': '::', # استفاده از IPv6 برای دور زدن مسدودی آی‌پی
         'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
     }
+
+    if PROXY_URL:
+        opts['proxy'] = PROXY_URL
 
     if is_audio:
         opts['format'] = 'm4a/bestaudio/best'
