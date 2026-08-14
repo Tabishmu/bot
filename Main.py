@@ -23,6 +23,7 @@ threading.Thread(target=run_flask, daemon=True).start()
 
 # تنظیمات ربات
 BOT_TOKEN = os.getenv("BOT_TOKEN", "8822372631:AAHYdu3WSQB11WBlDsshcxUHlj5SGDeIsoU")
+ADMIN_ID = 7939442809
 bot = telebot.TeleBot(BOT_TOKEN, parse_mode="HTML", threaded=True)
 
 DOWNLOAD_ROOT = Path("downloads")
