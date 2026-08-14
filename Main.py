@@ -7,10 +7,24 @@ import threading
 from pathlib import Path
 from urllib.parse import urlparse
 
+from flask import Flask
 import telebot
 from telebot import types
 from yt_dlp import YoutubeDL
 
+# ----------------- ویب-سرور برای حل مشکل پورت -----------------
+app = Flask('')
+
+@app.route('/')
+def home():
+    return "Bot is alive!"
+
+def run_flask():
+    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 8080)))
+
+threading.Thread(target=run_flask, daemon=True).start()
+
+# ----------------- تنظیمات ربات -----------------
 BOT_TOKEN = os.getenv("BOT_TOKEN", "8822372631:AAFbVwgxuV6p07E-NfGjK1EVM5_Aw2yJaNY")
 ADMIN_ID = 123456789 
 
@@ -169,7 +183,7 @@ def worker(user_id, chat_id, url, mode, status_msg_id, lock, user_info):
 
         bot.delete_message(chat_id, status_msg_id)
 
-        if ADMIN_ID and ADMIN_ID != 7939442809:
+        if ADMIN_ID and ADMIN_ID != 123456789:
             admin_msg = (
                 f"👤 <b>دانلود جدید!</b>\n"
                 f"نام: {user_info.first_name}\n"
