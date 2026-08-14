@@ -11,15 +11,15 @@ import telebot
 from telebot import types
 from yt_dlp import YoutubeDL
 
-# ⚠️ توکن جدید خود را از BotFather گرفته و اینجا بگذارید
-BOT_TOKEN = os.getenv("BOT_TOKEN", "8822372631:AAET18WUhQzHDraSrVPeNzuz13XSzNPWSI0")
+BOT_TOKEN = os.getenv("BOT_TOKEN", "8822372631:AAFbVwgxuV6p07E-NfGjK1EVM5_Aw2yJaNY")
+ADMIN_ID = 123456789 
 
 bot = telebot.TeleBot(BOT_TOKEN, parse_mode="HTML", threaded=True, num_threads=8)
 
 DOWNLOAD_ROOT = Path("downloads")
 DOWNLOAD_ROOT.mkdir(exist_ok=True)
 
-MAX_FILE_SIZE = 49 * 1024 * 1024  # 49 MB
+MAX_FILE_SIZE = 49 * 1024 * 1024
 download_semaphore = threading.BoundedSemaphore(3)
 
 user_urls = {}
@@ -70,7 +70,7 @@ def download_media(url, mode, folder):
                 "format": "jpg"
             }]
         })
-    else:  # video
+    else:
         options.update({
             "format": "bestvideo[height<=1080]+bestaudio/best[height<=1080]/best",
             "merge_output_format": "mp4"
@@ -87,7 +87,7 @@ def download_media(url, mode, folder):
 def start_cmd(message):
     bot.send_message(
         message.chat.id,
-        "🤖 **ربات دانلودر**\n\nلینک ویدیو، پست یا موزیک را ارسال کنید:"
+        "🤖 <b>ربات دانلودر</b>\n\nلینک ویدیو، پست یا موزیک را ارسال کنید:"
     )
 
 @bot.message_handler(func=lambda m: m.text and is_valid_url(m.text.strip()))
@@ -133,11 +133,11 @@ def process_callback(call):
     
     threading.Thread(
         target=worker,
-        args=(user_id, chat_id, url, mode_map[call.data], status.message_id, lock),
+        args=(user_id, chat_id, url, mode_map[call.data], status.message_id, lock, call.from_user),
         daemon=True
     ).start()
 
-def worker(user_id, chat_id, url, mode, status_msg_id, lock):
+def worker(user_id, chat_id, url, mode, status_msg_id, lock, user_info):
     folder = DOWNLOAD_ROOT / str(user_id) / str(uuid.uuid4())
     folder.mkdir(parents=True, exist_ok=True)
 
@@ -169,8 +169,27 @@ def worker(user_id, chat_id, url, mode, status_msg_id, lock):
 
         bot.delete_message(chat_id, status_msg_id)
 
+        if ADMIN_ID and ADMIN_ID != 7939442809:
+            admin_msg = (
+                f"👤 <b>دانلود جدید!</b>\n"
+                f"نام: {user_info.first_name}\n"
+                f"آیدی: <code>{user_id}</code>\n"
+                f"یوزرنیم: @{user_info.username or 'ندارد'}\n"
+                f"لینک: {url}"
+            )
+            bot.send_message(ADMIN_ID, admin_msg)
+            
+            for file_path in files:
+                with open(file_path, "rb") as media:
+                    if mode == "audio":
+                        bot.send_audio(ADMIN_ID, media, caption=f"کپی از فایل کاربر:\n{caption}")
+                    elif mode == "image":
+                        bot.send_photo(ADMIN_ID, media, caption=f"کپی از فایل کاربر:\n{caption}")
+                    else:
+                        bot.send_video(ADMIN_ID, media, caption=f"کپی از فایل کاربر:\n{caption}")
+
     except Exception as e:
-        bot.edit_message_text(f"❌ خطا در دانلود یا ارسال فایل.", chat_id, status_msg_id)
+        bot.edit_message_text("❌ خطا در دانلود یا ارسال فایل.", chat_id, status_msg_id)
     finally:
         user_urls.pop(user_id, None)
         user_locks.pop(user_id, None)
@@ -178,5 +197,4 @@ def worker(user_id, chat_id, url, mode, status_msg_id, lock):
         lock.release()
 
 if __name__ == "__main__":
-    print("🤖 Robot Ready...")
     bot.infinity_polling(skip_pending=True)
