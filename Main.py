@@ -15,9 +15,7 @@ from yt_dlp import YoutubeDL
 
 load_dotenv()
 
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-
-BOT_TOKEN:("8822372631:AAHYi5RCR5g5tlwvId4
+BOT_TOKEN = os.getenv("8822372631:AAHYi5RCR5g5tlwvId4
 Pr5f7qHYeCTqLjL4")
 
 bot = telebot.TeleBot(
