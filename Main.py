@@ -1,48 +1,36 @@
 import os
-import re
-import time
 import shutil
 import uuid
 import threading
 from pathlib import Path
 from urllib.parse import urlparse
-
 from flask import Flask
 import telebot
 from telebot import types
 from yt_dlp import YoutubeDL
 
-# ----------------- ویب-سرور برای حل مشکل پورت -----------------
+# ویب‌سرور برای زنده نگه داشتن در Render
 app = Flask('')
 
 @app.route('/')
 def home():
-    return "Bot is alive!"
+    return "Bot is running!"
 
 def run_flask():
     app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 8080)))
 
 threading.Thread(target=run_flask, daemon=True).start()
 
-# ----------------- تنظیمات ربات -----------------
-BOT_TOKEN = os.getenv("BOT_TOKEN", "8822372631:AAFbVwgxuV6p07E-NfGjK1EVM5_Aw2yJaNY")
-ADMIN_ID = 123456789 
-
-bot = telebot.TeleBot(BOT_TOKEN, parse_mode="HTML", threaded=True, num_threads=8)
+# تنظیمات ربات
+BOT_TOKEN = os.getenv("BOT_TOKEN", "8822372631:AAHYdu3WSQB11WBlDsshcxUHlj5SGDeIsoU")
+bot = telebot.TeleBot(BOT_TOKEN, parse_mode="HTML", threaded=True)
 
 DOWNLOAD_ROOT = Path("downloads")
 DOWNLOAD_ROOT.mkdir(exist_ok=True)
 
-MAX_FILE_SIZE = 49 * 1024 * 1024
-download_semaphore = threading.BoundedSemaphore(3)
-
+# فقط ۱ دانلود در لحظه برای جلوگیری از پر شدن رم ۵۱۲ مگابایتی
+download_semaphore = threading.BoundedSemaphore(1)
 user_urls = {}
-user_locks = {}
-
-def get_user_lock(user_id):
-    if user_id not in user_locks:
-        user_locks[user_id] = threading.Lock()
-    return user_locks[user_id]
 
 def is_valid_url(url):
     try:
@@ -51,18 +39,14 @@ def is_valid_url(url):
     except Exception:
         return False
 
-def get_downloaded_files(folder):
-    return [p for p in folder.rglob("*") if p.is_file()]
-
 def download_media(url, mode, folder):
-    output_template = str(folder / "%(title).100s.%(ext)s")
+    output_template = str(folder / "%(title).50s.%(ext)s")
     
     options = {
         "outtmpl": output_template,
         "noplaylist": True,
         "quiet": True,
         "no_warnings": True,
-        "max_filesize": MAX_FILE_SIZE,
         "playlist_items": "1"
     }
 
@@ -72,7 +56,7 @@ def download_media(url, mode, folder):
             "postprocessors": [{
                 "key": "FFmpegExtractAudio",
                 "preferredcodec": "mp3",
-                "preferredquality": "192"
+                "preferredquality": "128"
             }]
         })
     elif mode == "image":
@@ -85,130 +69,80 @@ def download_media(url, mode, folder):
             }]
         })
     else:
+        # کیفیت محدود به 480p برای مصرف رم بسیار کم
         options.update({
-            "format": "bestvideo[height<=1080]+bestaudio/best[height<=1080]/best",
+            "format": "bestvideo[height<=480]+bestaudio/best[height<=480]/best",
             "merge_output_format": "mp4"
         })
 
     with YoutubeDL(options) as ydl:
         info = ydl.extract_info(url, download=True)
-        return {
-            "title": info.get("title", "Media"),
-            "files": get_downloaded_files(folder)
-        }
+        files = [p for p in folder.rglob("*") if p.is_file()]
+        return {"title": info.get("title", "Media"), "files": files}
 
 @bot.message_handler(commands=["start"])
 def start_cmd(message):
-    bot.send_message(
-        message.chat.id,
-        "🤖 <b>ربات دانلودر</b>\n\nلینک ویدیو، پست یا موزیک را ارسال کنید:"
-    )
+    bot.send_message(message.chat.id, "🤖 ربات آماده است! لینک ویدیو یا موزیک رو بفرست:")
 
 @bot.message_handler(func=lambda m: m.text and is_valid_url(m.text.strip()))
 def get_link(message):
-    user_id = message.from_user.id
-    user_urls[user_id] = message.text.strip()
-
-    markup = types.InlineKeyboardMarkup(row_width=3)
+    user_urls[message.from_user.id] = message.text.strip()
+    markup = types.InlineKeyboardMarkup(row_width=2)
     markup.add(
-        types.InlineKeyboardButton("🎬 ویدیو", callback_data="dl_video"),
-        types.InlineKeyboardButton("🎵 موزیک (MP3)", callback_data="dl_audio"),
-        types.InlineKeyboardButton("🖼 عکس/کاور", callback_data="dl_image")
+        types.InlineKeyboardButton("🎬 ویدیو (کم حجم)", callback_data="dl_video"),
+        types.InlineKeyboardButton("🎵 موزیک", callback_data="dl_audio")
     )
-    markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="cancel"))
+    bot.send_message(message.chat.id, "فرمت را انتخاب کنید:", reply_markup=markup)
 
-    bot.send_message(message.chat.id, "فرمت مورد نظر را انتخاب کنید:", reply_markup=markup)
-
-@bot.callback_query_handler(func=lambda call: call.data in ["dl_video", "dl_audio", "dl_image", "cancel"])
+@bot.callback_query_handler(func=lambda call: call.data in ["dl_video", "dl_audio"])
 def process_callback(call):
     user_id = call.from_user.id
     chat_id = call.message.chat.id
-
-    if call.data == "cancel":
-        user_urls.pop(user_id, None)
-        bot.answer_callback_query(call.id, "لغو شد.")
-        bot.edit_message_text("❌ عملیات لغو شد.", chat_id, call.message.message_id)
-        return
-
     url = user_urls.get(user_id)
-    if not url:
-        bot.answer_callback_query(call.id, "❌ لینک پیدا نشد.")
-        return
 
-    lock = get_user_lock(user_id)
-    if not lock.acquire(blocking=False):
-        bot.answer_callback_query(call.id, "⏳ یک دانلود در جریان است.")
+    if not url:
+        bot.answer_callback_query(call.id, "❌ لینک یافت نشد.")
         return
 
     bot.answer_callback_query(call.id, "در حال پردازش...")
-    status = bot.send_message(chat_id, "⏳ در حال دانلود...")
+    status = bot.send_message(chat_id, "⏳ در حال دانلود (لطفاً صبور باشید)...")
+    mode = "video" if call.data == "dl_video" else "audio"
 
-    mode_map = {"dl_video": "video", "dl_audio": "audio", "dl_image": "image"}
-    
     threading.Thread(
         target=worker,
-        args=(user_id, chat_id, url, mode_map[call.data], status.message_id, lock, call.from_user),
+        args=(user_id, chat_id, url, mode, status.message_id),
         daemon=True
     ).start()
 
-def worker(user_id, chat_id, url, mode, status_msg_id, lock, user_info):
+def worker(user_id, chat_id, url, mode, status_msg_id):
     folder = DOWNLOAD_ROOT / str(user_id) / str(uuid.uuid4())
     folder.mkdir(parents=True, exist_ok=True)
 
     try:
-        if not download_semaphore.acquire(timeout=30):
-            bot.edit_message_text("⏳ سرور شلوغ است. دوباره تلاش کنید.", chat_id, status_msg_id)
-            return
-
-        try:
+        # قفل برای دانلود یک‌به‌یک جهت عدم پر شدن رم
+        with download_semaphore:
             result = download_media(url, mode, folder)
-        finally:
-            download_semaphore.release()
 
         files = result["files"]
         if not files:
-            raise RuntimeError("فایلی دریافت نشد.")
+            raise RuntimeError("فایل یافت نشد.")
 
-        bot.edit_message_text("📤 در حال ارسال فایل...", chat_id, status_msg_id)
-        caption = f"📥 <b>{result['title']}</b>"
+        bot.edit_message_text("📤 در حال ارسال به تلگرام...", chat_id, status_msg_id)
 
         for file_path in files:
             with open(file_path, "rb") as media:
                 if mode == "audio":
-                    bot.send_audio(chat_id, media, caption=caption)
-                elif mode == "image":
-                    bot.send_photo(chat_id, media, caption=caption)
+                    bot.send_audio(chat_id, media, caption=result['title'])
                 else:
-                    bot.send_video(chat_id, media, caption=caption, supports_streaming=True)
+                    bot.send_video(chat_id, media, caption=result['title'])
 
         bot.delete_message(chat_id, status_msg_id)
 
-        if ADMIN_ID and ADMIN_ID != 123456789:
-            admin_msg = (
-                f"👤 <b>دانلود جدید!</b>\n"
-                f"نام: {user_info.first_name}\n"
-                f"آیدی: <code>{user_id}</code>\n"
-                f"یوزرنیم: @{user_info.username or 'ندارد'}\n"
-                f"لینک: {url}"
-            )
-            bot.send_message(ADMIN_ID, admin_msg)
-            
-            for file_path in files:
-                with open(file_path, "rb") as media:
-                    if mode == "audio":
-                        bot.send_audio(ADMIN_ID, media, caption=f"کپی از فایل کاربر:\n{caption}")
-                    elif mode == "image":
-                        bot.send_photo(ADMIN_ID, media, caption=f"کپی از فایل کاربر:\n{caption}")
-                    else:
-                        bot.send_video(ADMIN_ID, media, caption=f"کپی از فایل کاربر:\n{caption}")
-
-    except Exception as e:
-        bot.edit_message_text("❌ خطا در دانلود یا ارسال فایل.", chat_id, status_msg_id)
+    except Exception:
+        bot.edit_message_text("❌ خطا در دانلود! ویدیو خیلی سنگین است یا لینک معتبر نیست.", chat_id, status_msg_id)
     finally:
         user_urls.pop(user_id, None)
-        user_locks.pop(user_id, None)
         shutil.rmtree(folder, ignore_errors=True)
-        lock.release()
 
 if __name__ == "__main__":
     bot.infinity_polling(skip_pending=True)
