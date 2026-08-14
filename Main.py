@@ -83,7 +83,7 @@ def download_media(url, mode, folder):
 
 @bot.message_handler(commands=["start"])
 def start_cmd(message):
-    bot.send_message(message.chat.id, "🤖 ربات آماده است! لینک ویدیو یا موزیک رو بفرست:")
+    bot.send_message(message.chat.id, "🤖 :")
 
 @bot.message_handler(func=lambda m: m.text and is_valid_url(m.text.strip()))
 def get_link(message):
