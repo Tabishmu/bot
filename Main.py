@@ -19,8 +19,7 @@ from yt_dlp import YoutubeDL
 
 load_dotenv()
 
-BOT_TOKEN = os.getenv("8822372631:AAHYi5RCR5g5tlwvId4
-Pr5f7qHYeCTqLjL4")
+BOT_TOKEN = os.getenv("BOT_TOKEN)
 
 if not BOT_TOKEN:
     raise RuntimeError("8822372631:AAHYi5RCR5g5tlwvId4
