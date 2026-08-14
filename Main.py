@@ -18,10 +18,11 @@ load_dotenv()
 
 
 if not BOT_TOKEN:
-    raise RuntimeError("BOT_TOKEN")
+    raise RuntimeError("8822372631:AAHYi5RCR5g5tlwvId4
+Pr5f7qHYeCTqLjL4")
 
-bot = telebot.TeleBot(8822372631:AAHYi5RCR5g5tlwvId4
-Pr5f7qHYeCTqLjL4,
+bot = telebot.TeleBot(
+    ,
     parse_mode="HTML",
     threaded=True,
     num_threads=8
