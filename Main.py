@@ -9,20 +9,18 @@ from urllib.parse import urlparse
 
 import telebot
 from telebot import types
-from dotenv import load_dotenv
 from yt_dlp import YoutubeDL
 
 
-load_dotenv()
+BOT_TOKEN = "8822372631:AAHYi5RCR5g5tlwvId4
+Pr5f7qHYeCTqLjL4"
 
-
-
-if not BOT_TOKEN:
-    raise RuntimeError("8822372631:AAHYi5RCR5g5tlwvId4
-Pr5f7qHYeCTqLjL4")
+if not BOT_TOKEN or BOT_TOKEN == "8822372631:AAHYi5RCR5g5tlwvId4
+Pr5f7qHYeCTqLjL4":
+    raise RuntimeError("لطفاً توکن ربات خود را در متغیر BOT_TOKEN قرار دهید.")
 
 bot = telebot.TeleBot(
-    ,
+    BOT_TOKEN,
     parse_mode="HTML",
     threaded=True,
     num_threads=8
